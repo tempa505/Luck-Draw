@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /draws/mbs538 {
+      allow read: if request.auth != null;
+      function validEntry(e) {
+        return e is map
+          && e.keys().hasOnly(['name', 'uid', 'claimedAt'])
+          && e.keys().hasAll(['name', 'uid', 'claimedAt'])
+          && e.name is string && e.name.size() >= 2 && e.name.size() <= 40
+          && e.uid == request.auth.uid
+          && e.claimedAt == request.time;
+      }
+      function validClaims(next, old) {
+        let changed = next.diff(old);
+        let added = changed.addedKeys();
+        let key = added[0];
+        return next.keys().hasOnly(['box1','box2','box3'])
+          && added.size() == 1
+          && changed.changedKeys().size() == 0
+          && changed.removedKeys().size() == 0
+          && next.size() <= 3
+          && validEntry(next[key])
+          && (!('box1' in old) || (old.box1.uid != request.auth.uid && old.box1.name.lower() != next[key].name.lower()))
+          && (!('box2' in old) || (old.box2.uid != request.auth.uid && old.box2.name.lower() != next[key].name.lower()))
+          && (!('box3' in old) || (old.box3.uid != request.auth.uid && old.box3.name.lower() != next[key].name.lower()));
+      }
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['claims'])
+        && request.resource.data.keys().hasAll(['claims'])
+        && request.resource.data.claims is map
+        && validClaims(request.resource.data.claims, {});
+      allow update: if request.auth != null
+        && request.resource.data.keys().hasOnly(['claims'])
+        && request.resource.data.keys().hasAll(['claims'])
+        && resource.data.keys().hasOnly(['claims'])
+        && request.resource.data.claims is map
+        && validClaims(request.resource.data.claims, resource.data.claims);
+      allow delete: if false;
+    }
+  }
+}
